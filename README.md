@@ -31,8 +31,8 @@ please create a pull request if you have made another check and want to include 
 we dont have that since im lazy and dont do updates.
 
 ## authors
-
-* **Robert 'BaumFX'** - *initial work* - [website](https://baumfx.xyz) - [GitHub](https://github.com/BaumFX)
+* **John 'cetfor' Toterhi** - *initial work on the stuffs* - [GitHub](https://github.com/cetfor)
+* **Robert 'BaumFX'** - *refactored, commented stuff and added stuff* - [website](https://baumfx.xyz) - [GitHub](https://github.com/BaumFX)
 
 ## license
 
