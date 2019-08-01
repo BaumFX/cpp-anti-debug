@@ -5,6 +5,10 @@
 #include <functional>
 #include <vector>
 
+//TODO:
+
+//stack strings / string encryption https://www.unknowncheats.me/forum/members/1446734.html
+
 //checks the process environment block (peb) for a "beingdebugged" field (gets set if process is launched in a debugger)
 //possible bypass: once the peb byte is set, set the value to 0 before the application checks
 int security::internal::memory::being_debugged_peb() {
@@ -18,8 +22,7 @@ int security::internal::memory::being_debugged_peb() {
 		mov found, eax;			//copy value to found
 	}
 
-	//if found is true, we return the right code.
-	if (found) { return security::internal::debug_results::being_debugged_peb; }
+	return (found) ? security::internal::debug_results::being_debugged_peb : security::internal::debug_results::none;
 }
 
 //checks if a debugger is running (in another system/process)
@@ -35,23 +38,20 @@ int security::internal::memory::remote_debugger_present() {
 	CheckRemoteDebuggerPresent(h_process, &found);
 
 	//if found is true, we return the right code.
-	if (found) { return security::internal::debug_results::remote_debugger_present; }
-
-	return security::internal::debug_results::none;
+	return (found) ? security::internal::debug_results::remote_debugger_present : security::internal::debug_results::none;
 }
 
 //checks if certain windows are present (not the name that can be easily changed but the window_class_name)
 //possible bypass: set a breakpoint before this gets called, single step, set the return value to 0
 int security::internal::memory::check_window_name() {
-	//window class names
-	const wchar_t* window_class_name_idapro = L"Qt5QWindowIcon"; //idapro
-	const wchar_t* window_class_name_ollydbg = L"OLLYDBG";		 //ollydbg
-	const wchar_t* window_class_name_ghidra = L"SunAwtFrame";    //ghidra
-	const wchar_t* window_class_name_immunity = L"ID";			 //immunity debugger
 
-	//if one is found, we return the right code.
-	if (FindWindow(window_class_name_idapro, 0) || FindWindow(window_class_name_ollydbg, 0) || FindWindow(window_class_name_ghidra, 0) || FindWindow(window_class_name_immunity, 0)) {
-		return security::internal::debug_results::find_window;
+	//thanks to https://www.unknowncheats.me/forum/members/2675301.html for suggesting an array for the names
+	//array that stores the different names for the debuggers
+	//                            IDA Pro            OllyDBG     Ghidra          Immunity Debugger
+	const wchar_t* names[4] = { L"Qt5QWindowIcon", L"OLLYDBG", L"SunAwtFrame", L"ID" };
+
+	for (const wchar_t* name : names) {
+		if (FindWindow(name, 0)) { return security::internal::debug_results::find_window; }
 	}
 
 	return security::internal::debug_results::none;
@@ -61,9 +61,7 @@ int security::internal::memory::check_window_name() {
 //possible bypass: set a breakpoint before this gets called, single step, set the return value to 0
 int security::internal::memory::is_debugger_present() {
 	//if debugger is found, we return the right code.
-	if (IsDebuggerPresent()) { return security::internal::debug_results::debugger_is_present; }
-
-	return security::internal::debug_results::none;
+	return (IsDebuggerPresent()) ? security::internal::debug_results::debugger_is_present : security::internal::debug_results::none;
 }
 
 //looks for process environment block references
@@ -83,7 +81,7 @@ int security::internal::memory::nt_global_flag_peb() {
 	}
 
 	//if found is true, we return the right code.
-	if (found) { return security::internal::debug_results::dbg_global_flag; }
+	return (found) ? security::internal::debug_results::being_debugged_peb : security::internal::debug_results::none;
 }
 
 //two checks here, 1. xxx, 2. NoDebugInherit
@@ -199,9 +197,7 @@ int security::internal::memory::debug_active_process(const char* cpid) {
 	CloseHandle(pi.hProcess);
 	CloseHandle(pi.hThread);
 	//if found is true, we return the right code.
-	if (found) { return security::internal::debug_results::debug_active_process; }
-
-	return security::internal::debug_results::none;
+	return (found) ? security::internal::debug_results::being_debugged_peb : security::internal::debug_results::none;
 }
 
 //will throw an exception when trying to close an invalid handle (only when debugged)
@@ -320,6 +316,15 @@ int security::internal::exceptions::prefix_hop() {
 	return security::internal::debug_results::prefix_hop;
 }
 
+//checks whether a debugger is present by attempting to output a string to the debugger (helper functions for debugging applications)
+//if no debugger is present an error occurs -> we can check if the last error is not 0 (an error) -> debugger not found
+int security::internal::exceptions::debug_string() {
+	SetLastError(0);
+	OutputDebugStringA("anti-debugging test.");
+
+	return (GetLastError() != 0) ? security::internal::debug_results::debug_string : security::internal::debug_results::none;
+}
+
 int security::internal::timing::rdtsc() {
 	//integers for time values
 	UINT64 time_a, time_b = 0;
@@ -351,11 +356,9 @@ int security::internal::timing::rdtsc() {
 	time_b = time_upper_b;
 	time_b = (time_b << 32) | time_lower_b;
 
-	//0x10000 is purely empirical and is based on the computer's clock cycle
-	//should change depending on the length and complexity of the code between each rdtsc operation
-	if (time_b - time_a > 0x10000) { return security::internal::debug_results::rdtsc; }
-
-	return security::internal::debug_results::none;
+	//0x10000 is purely empirical and is based on the computer's clock cycle, could be less if the cpu clocks really fast etc.
+	//should change depending on the length and complexity of the code between each rdtsc operation (-> asm code inbetween needs longer to execute but takes A LOT longer if its being debugged / someone is stepping through it)
+	return (time_b - time_a > 0x10000) ? security::internal::debug_results::rdtsc : security::internal::debug_results::none;
 }
 
 //checks how much time passes between the two query performance counters
@@ -381,9 +384,7 @@ int security::internal::timing::query_performance_counter() {
 	QueryPerformanceCounter(&t2);
 
 	//30 is a random value
-	if ((t2.QuadPart - t1.QuadPart) > 30) { return security::internal::debug_results::query_performance_counter; }
-
-	return security::internal::debug_results::none;
+	return ((t2.QuadPart - t1.QuadPart) > 30) ? security::internal::debug_results::query_performance_counter : security::internal::debug_results::none;
 }
 
 //same as above
@@ -393,7 +394,7 @@ int security::internal::timing::get_tick_count() {
 
 	t1 = GetTickCount();
 
-	//junk code
+	//junk code to keep the cpu busy for a few cycles so that time passes and the return value of GetTickCount() changes (so we can detect if it runs at "normal" speed or is being checked through by a human)
 	_asm
 	{
 		xor eax, eax;
@@ -408,9 +409,7 @@ int security::internal::timing::get_tick_count() {
 	t2 = GetTickCount();
 
 	//30 ms seems ok
-	if ((t2 - t1) > 30) { return security::internal::debug_results::get_tick_count; }
-
-	return security::internal::debug_results::none;
+	return ((t2 - t1) > 30) ? security::internal::debug_results::query_performance_counter : security::internal::debug_results::none;
 }
 
 int security::internal::cpu::hardware_debug_registers() {
@@ -420,14 +419,13 @@ int security::internal::cpu::hardware_debug_registers() {
 	ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
 	if (GetThreadContext(h_thread, &ctx))
 	{
-		if ((ctx.Dr0 != 0x00) || (ctx.Dr1 != 0x00) || (ctx.Dr2 != 0x00) || (ctx.Dr3 != 0x00) || (ctx.Dr6 != 0x00) || (ctx.Dr7 != 0x00))
-		{
-			return security::internal::debug_results::hardware_debug_registers;
-		}
+		return ((ctx.Dr0 != 0x00) || (ctx.Dr1 != 0x00) || (ctx.Dr2 != 0x00) || (ctx.Dr3 != 0x00) || (ctx.Dr6 != 0x00) || (ctx.Dr7 != 0x00)) ? security::internal::debug_results::hardware_debug_registers : security::internal::debug_results::none;
 	}
+
 	return security::internal::debug_results::none;
 }
 
+//single stepping check
 int security::internal::cpu::mov_ss() {
 	BOOL found = FALSE;
 
@@ -445,16 +443,19 @@ int security::internal::cpu::mov_ss() {
 		nop;
 	}
 
-	if (found) { return security::internal::debug_results::mov_ss; }
+	return (found) ? security::internal::debug_results::mov_ss : security::internal::debug_results::none;
 }
 
 int security::check_security(const char* pid) {
-
-	return (security::internal::memory::being_debugged_peb() != 0 || security::internal::memory::remote_debugger_present() != 0 || security::internal::memory::check_window_name() != 0
-		|| security::internal::memory::is_debugger_present() != 0 || security::internal::memory::nt_global_flag_peb() != 0 || security::internal::memory::nt_query_information_process() != 0
-		|| security::internal::memory::nt_set_information_thread() != 0 || security::internal::memory::debug_active_process(pid) != 0
-		|| security::internal::exceptions::close_handle_exception() != 0 || security::internal::exceptions::single_step_exception() != 0 || security::internal::exceptions::int_3() != 0
-		|| security::internal::exceptions::int_2d() != 0 || security::internal::exceptions::prefix_hop() != 0
-		|| security::internal::timing::rdtsc() != 0 || security::internal::timing::query_performance_counter() != 0 || security::internal::timing::get_tick_count() != 0
-		|| security::internal::cpu::hardware_debug_registers() != 0 || security::internal::cpu::mov_ss() != 0);
+	bool yes = ((security::internal::memory::being_debugged_peb() == security::internal::debug_results::none && security::internal::memory::remote_debugger_present() == security::internal::debug_results::none
+		&& security::internal::memory::check_window_name() == security::internal::debug_results::none && security::internal::memory::is_debugger_present() == security::internal::debug_results::none
+		&& security::internal::memory::nt_global_flag_peb() == security::internal::debug_results::none && security::internal::memory::nt_query_information_process() == security::internal::debug_results::none
+		&& security::internal::memory::nt_set_information_thread() == security::internal::debug_results::none && security::internal::memory::debug_active_process(pid) == security::internal::debug_results::none
+		&& security::internal::exceptions::close_handle_exception() == security::internal::debug_results::none && security::internal::exceptions::single_step_exception() == security::internal::debug_results::none
+		&& security::internal::exceptions::int_3() == security::internal::debug_results::none && security::internal::exceptions::int_2d() == security::internal::debug_results::none
+		&& security::internal::exceptions::prefix_hop() == security::internal::debug_results::none && security::internal::exceptions::debug_string() == security::internal::debug_results::none
+		&& security::internal::timing::rdtsc() == security::internal::debug_results::none && security::internal::timing::query_performance_counter() == security::internal::debug_results::none
+		&& security::internal::timing::get_tick_count() == security::internal::debug_results::none && security::internal::cpu::hardware_debug_registers() == security::internal::debug_results::none
+		&& security::internal::cpu::mov_ss() == security::internal::debug_results::none) == security::internal::debug_results::none);
+	return (yes) ? 0 : -1;
 }
