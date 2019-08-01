@@ -20,34 +20,35 @@ namespace security {
 		extern enum debug_results
 		{
 			//nothing was caught, value = 0
-			none, //0
+			none = 0x0000, //0
 
-			//something caught in memory (1 - 9)
-			being_debugged_peb, //1
-			remote_debugger_present, //2
-			debugger_is_present, //3
-			dbg_global_flag, //4
-			nt_query_information_process, //5
-			find_window, //6
-			output_debug_string, //7
-			nt_set_information_thread, //8
-			debug_active_process, //9
+			//something caught in memory (0x1000 - 0x1008)
+			being_debugged_peb = 0x1000,
+			remote_debugger_present = 0x1001,
+			debugger_is_present = 0x1002,
+			dbg_global_flag = 0x1003,
+			nt_query_information_process = 0x0004,
+			find_window = 0x1005,
+			output_debug_string = 0x1006,
+			nt_set_information_thread = 0x1007,
+			debug_active_process = 0x1008,
 
-			//something caught in exceptions (10 - 14)
-			close_handle_exception, //10
-			single_step, //11
-			int_3_cc, //12
-			int_2, //13
-			prefix_hop, //14
+			//something caught in exceptions (0x2000 - 0x2005)
+			close_handle_exception = 0x2000,
+			single_step = 0x2001,
+			int_3_cc = 0x2002,
+			int_2 = 0x2003,
+			prefix_hop = 0x2004,
+			debug_string = 0x2005,
 
-			//something caught with timings (15 - 17)
-			rdtsc, //15
-			query_performance_counter, //16
-			get_tick_count, //17
+			//something caught with timings (0x3000 - 0x3002)
+			rdtsc = 0x3000,
+			query_performance_counter = 0x3001,
+			get_tick_count = 0x3002,
 
-			//something caught in cpu (18 - 19)
-			hardware_debug_registers, //18
-			mov_ss, //19
+			//something caught in cpu (0x4000 - 0x4001)
+			hardware_debug_registers = 0x4002,
+			mov_ss = 0x4001,
 		};
 
 		namespace memory {
@@ -67,6 +68,7 @@ namespace security {
 			int int_3();
 			int int_2d();
 			int prefix_hop();
+			int debug_string();
 		}
 
 		namespace timing {
