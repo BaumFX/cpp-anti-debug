@@ -3,6 +3,10 @@ Debug/
 x64/
 .vs/
 
+# project files
+*.sln
+*.vxproj*
+
 # prerequisites
 *.d
 
