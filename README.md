@@ -24,9 +24,9 @@ if(security_status != 0) {
 ```
 
 ## features
-### string encryption to prevent static anlysis, strings get returned from one central function (if possible)
-### the library features the following functions (in-depth explanation for most of them is in the code):
-### alternatively you can use the big function check_security() to run all checks.
+string encryption to prevent static anlysis, strings get returned from one central function (if possible)
+the library features the following functions (in-depth explanation for most of them is in the code):
+alternatively you can use the big function check_security() to run all checks.
 ```
 		namespace memory {
 			int being_debugged_peb();
