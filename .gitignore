@@ -5,7 +5,13 @@ x64/
 
 # project files
 *.sln
-*.vxproj*
+*.vcxproj*
+
+# utils
+main.cpp
+utilities.cpp
+utilities.hpp
+xor_cc.hpp
 
 # prerequisites
 *.d
