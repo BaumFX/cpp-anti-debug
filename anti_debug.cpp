@@ -556,10 +556,10 @@ int security::check_security(const char* pid) {
 		&& security::internal::memory::nt_global_flag_peb() == security::internal::debug_results::none && security::internal::memory::nt_query_information_process() == security::internal::debug_results::none
 		&& security::internal::memory::nt_set_information_thread() == security::internal::debug_results::none && security::internal::memory::debug_active_process(pid) == security::internal::debug_results::none
 		&& security::internal::exceptions::close_handle_exception() == security::internal::debug_results::none && security::internal::exceptions::single_step_exception() == security::internal::debug_results::none
-		&& security::internal::exceptions::int_3() == security::internal::debug_results::none && security::internal::exceptions::int_2d() == security::internal::debug_results::none
-		&& security::internal::exceptions::prefix_hop() == security::internal::debug_results::none && security::internal::exceptions::debug_string() == security::internal::debug_results::none
-		&& security::internal::timing::rdtsc() == security::internal::debug_results::none && security::internal::timing::query_performance_counter() == security::internal::debug_results::none
-		&& security::internal::timing::get_tick_count() == security::internal::debug_results::none && security::internal::cpu::hardware_debug_registers() == security::internal::debug_results::none
-		&& security::internal::cpu::mov_ss() == security::internal::debug_results::none) == security::internal::debug_results::none);
+		&& security::internal::memory::write_buffer() == security::internal::debug_results::none && security::internal::exceptions::int_3() == security::internal::debug_results::none
+		&& security::internal::exceptions::int_2d() == security::internal::debug_results::none && security::internal::exceptions::prefix_hop() == security::internal::debug_results::none
+		&& security::internal::exceptions::debug_string() == security::internal::debug_results::none && security::internal::timing::rdtsc() == security::internal::debug_results::none 
+		&& security::internal::timing::query_performance_counter() == security::internal::debug_results::none && security::internal::timing::get_tick_count() == security::internal::debug_results::none
+		&& security::internal::cpu::hardware_debug_registers() == security::internal::debug_results::none && security::internal::cpu::mov_ss() == security::internal::debug_results::none) == security::internal::debug_results::none);
 	return (yes) ? 0 : -1;
 }
