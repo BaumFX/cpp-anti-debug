@@ -1,13 +1,38 @@
-
 #include <Windows.h>
-#include "cpp_security.hpp"
+#include "anti_debug.hpp"
 #include <cstdio>
 #include <functional>
 #include <vector>
+#include <string>
+#include "utilities.hpp"
+#include <iostream>
 
-//TODO:
+//precompiler instructions -> replace the xor(string) with a xor(xor'd_string) so that
+//the strings won't be caught by static analysis
+#include "xor_cc.hpp"
 
-//stack strings / string encryption https://www.unknowncheats.me/forum/members/1446734.html
+//disable warnings because #cleancode
+#pragma warning(disable : 6387)
+#pragma warning(disable : 4244)
+
+//returns strings for the check_window_name() function
+//this combined with the xoring of strings is to prevent static analysis / make it harder
+const wchar_t* security::internal::get_string(int index) {
+	std::string value = "";
+
+	switch (index) {
+	case 0: value = xor ("Qt5QWindowIcon"); break;
+	case 1: value = xor ("OLLYDBG"); break;
+	case 2: value = xor ("SunAwtFrame"); break;
+	case 3: value = xor ("ID"); break;
+	case 4: value = xor ("ntdll.dll"); break;
+	case 5: value = xor ("antidbg"); break;
+	case 6: value = xor ("%random_environment_var_name_that_doesnt_exist?[]<>@\\;*!-{}#:/~%"); break;
+	case 7: value = xor ("%random_file_name_that_doesnt_exist?[]<>@\\;*!-{}#:/~%"); break;
+	}
+
+	return std::wstring(value.begin(), value.end()).c_str();
+}
 
 //checks the process environment block (peb) for a "beingdebugged" field (gets set if process is launched in a debugger)
 //possible bypass: once the peb byte is set, set the value to 0 before the application checks
@@ -44,11 +69,7 @@ int security::internal::memory::remote_debugger_present() {
 //checks if certain windows are present (not the name that can be easily changed but the window_class_name)
 //possible bypass: set a breakpoint before this gets called, single step, set the return value to 0
 int security::internal::memory::check_window_name() {
-
-	//thanks to https://www.unknowncheats.me/forum/members/2675301.html for suggesting an array for the names
-	//array that stores the different names for the debuggers
-	//                            IDA Pro            OllyDBG     Ghidra          Immunity Debugger
-	const wchar_t* names[4] = { L"Qt5QWindowIcon", L"OLLYDBG", L"SunAwtFrame", L"ID" };
+	const wchar_t* names[4] = { get_string(0), get_string(1), get_string(2), get_string(3) };
 
 	for (const wchar_t* name : names) {
 		if (FindWindow(name, 0)) { return security::internal::debug_results::find_window; }
@@ -92,14 +113,14 @@ int security::internal::memory::nt_query_information_process() {
 	DWORD process_debug_flags = 0x1F;	//second method, check msdn for details
 
 	//get a handle to ntdll.dll so we can use NtQueryInformationProcess
-	HMODULE h_ntdll = LoadLibraryW(L"ntdll.dll");
-	
+	HMODULE h_ntdll = LoadLibraryW(get_string(4));
+
 	//if we cant get the handle for some reason, we return none
 	if (h_ntdll == INVALID_HANDLE_VALUE || h_ntdll == NULL) { return security::internal::debug_results::none; }
 
 	//dynamically acquire the address of NtQueryInformationProcess
 	_NtQueryInformationProcess NtQueryInformationProcess = NULL;
-	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, "NtQueryInformationProcess");
+	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, xor ("NtQueryInformationProcess"));
 
 	//if we cant get access for some reason, we return none
 	if (NtQueryInformationProcess == NULL) { return security::internal::debug_results::none; }
@@ -125,14 +146,14 @@ int security::internal::memory::nt_set_information_thread() {
 	DWORD thread_hide_from_debugger = 0x11;
 
 	//get a handle to ntdll.dll so we can use NtQueryInformationProcess
-	HMODULE h_ntdll = LoadLibraryW(L"ntdll.dll");
+	HMODULE h_ntdll = LoadLibraryW(get_string(4));
 
 	//if we cant get the handle for some reason, we return none
 	if (h_ntdll == INVALID_HANDLE_VALUE || h_ntdll == NULL) { return security::internal::debug_results::none; }
 
 	//dynamically acquire the address of NtQueryInformationProcess
 	_NtQueryInformationProcess NtQueryInformationProcess = NULL;
-	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, "NtQueryInformationProcess");
+	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, xor ("NtQueryInformationProcess"));
 
 	//if we cant get access for some reason, we return none
 	if (NtQueryInformationProcess == NULL) { return security::internal::debug_results::none; }
@@ -151,7 +172,7 @@ int security::internal::memory::debug_active_process(const char* cpid) {
 	TCHAR sz_path[MAX_PATH];
 	DWORD exit_code = 0;
 
-	CreateMutex(NULL, FALSE, L"antidbg");
+	CreateMutex(NULL, FALSE, get_string(5));
 	if (GetLastError() != ERROR_SUCCESS)
 	{
 		//if we get here, we're in the child process
@@ -172,7 +193,7 @@ int security::internal::memory::debug_active_process(const char* cpid) {
 	GetModuleFileName(NULL, sz_path, MAX_PATH);
 
 	char cmdline[MAX_PATH + 1 + sizeof(int)];
-	snprintf(cmdline, sizeof(cmdline), "%ws %d", sz_path, pid);
+	snprintf(cmdline, sizeof(cmdline), xor ("%ws %d"), sz_path, pid);
 
 	//start child process
 	BOOL success = CreateProcessA(
@@ -198,6 +219,89 @@ int security::internal::memory::debug_active_process(const char* cpid) {
 	CloseHandle(pi.hThread);
 	//if found is true, we return the right code.
 	return (found) ? security::internal::debug_results::being_debugged_peb : security::internal::debug_results::none;
+}
+
+//uses MEM_WRITE_WATCH feature of VirtualAlloc to check whether a debugger etc. is writing to our memory
+//4 possible options:
+//allocate a buffer, write to it once, check if its accessed more than once
+//allocate a buffer and pass it to an API where the buffer isn't touched (but it's still being passed as an argument), then check if its accessed more than once
+//allocate a buffer and store something "important" (IsDebuggerPresent() return value etc.), check if the memory was used once or not
+//allocate an executable buffer, copy a debug check routine to it, run the check and check if any writes were performed after the initial write
+
+//thanks to LordNoteworthy/al-khaser for the idea
+int security::internal::memory::write_buffer() {
+	//first option
+
+	//vars to store the amount of accesses to the buffer and the granularity for GetWriteWatch()
+	ULONG_PTR hits;
+	DWORD granularity;
+
+	PVOID* addresses = static_cast<PVOID*>(VirtualAlloc(NULL, 4096 * sizeof(PVOID), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+	if (addresses == NULL) { return security::internal::debug_results::write_buffer; }
+
+	int* buffer = static_cast<int*>(VirtualAlloc(NULL, 4096 * 4096, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE));
+	if (buffer == NULL) {
+		VirtualFree(addresses, 0, MEM_RELEASE);
+		return security::internal::debug_results::write_buffer;
+	}
+
+	//read the buffer once
+	buffer[0] = 1234;
+
+	hits = 4096;
+	if (GetWriteWatch(0, buffer, 4096, addresses, &hits, &granularity) != 0) { return security::internal::debug_results::write_buffer; }
+	else
+	{
+		//free the memory again
+		VirtualFree(addresses, 0, MEM_RELEASE);
+		VirtualFree(buffer, 0, MEM_RELEASE);
+
+		//we should have 1 hit if everything is fine
+		return (hits != 1) ? security::internal::debug_results::none : security::internal::debug_results::write_buffer;
+	}
+
+	//second option
+
+	BOOL result = FALSE, error = FALSE;
+
+	addresses = static_cast<PVOID*>(VirtualAlloc(NULL, 4096 * sizeof(PVOID), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+	if (addresses == NULL) { return security::internal::debug_results::write_buffer; }
+
+	buffer = static_cast<int*>(VirtualAlloc(NULL, 4096 * 4096, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE));
+	if (buffer == NULL) {
+		VirtualFree(addresses, 0, MEM_RELEASE);
+		return security::internal::debug_results::write_buffer;
+	}
+
+	//make some calls where a buffer *can* be written to, but isn't actually edited because we pass invalid parameters
+	if ((GlobalGetAtomName(INVALID_ATOM, (LPTSTR)buffer, 1) != FALSE) || (GetEnvironmentVariable(get_string(6), (LPWSTR)buffer, 4096 * 4096) != FALSE)
+		|| (GetBinaryType(get_string(7), (LPDWORD)buffer) != FALSE) || (HeapQueryInformation(0, (HEAP_INFORMATION_CLASS)69, buffer, 4096, NULL) != FALSE)
+		|| (ReadProcessMemory(INVALID_HANDLE_VALUE, (LPCVOID)0x69696969, buffer, 4096, NULL) != FALSE) || (GetThreadContext(INVALID_HANDLE_VALUE, (LPCONTEXT)buffer) != FALSE)
+		|| (GetWriteWatch(0, &security::internal::memory::write_buffer, 0, NULL, NULL, (PULONG)buffer) == 0)) {
+		result = false;
+		error = true;
+	}
+
+	if (error == FALSE)
+	{
+		//all calles failed as they're supposed to
+		hits = 4096;
+		if (GetWriteWatch(0, buffer, 4096, addresses, &hits, &granularity) != 0)
+		{
+			result = FALSE;
+		}
+		else
+		{
+			//should have zero reads here because GlobalGetAtomName doesn't probe the buffer until other checks have succeeded
+			//if there's an API hook or debugger in here it'll probably try to probe the buffer, which will be caught here
+			result = hits != 0;
+		}
+	}
+
+	VirtualFree(addresses, 0, MEM_RELEASE);
+	VirtualFree(buffer, 0, MEM_RELEASE);
+
+	return result;
 }
 
 //will throw an exception when trying to close an invalid handle (only when debugged)
@@ -320,7 +424,7 @@ int security::internal::exceptions::prefix_hop() {
 //if no debugger is present an error occurs -> we can check if the last error is not 0 (an error) -> debugger not found
 int security::internal::exceptions::debug_string() {
 	SetLastError(0);
-	OutputDebugStringA("anti-debugging test.");
+	OutputDebugStringA(xor ("anti-debugging test."));
 
 	return (GetLastError() != 0) ? security::internal::debug_results::debug_string : security::internal::debug_results::none;
 }
@@ -345,7 +449,7 @@ int security::internal::timing::rdtsc() {
 		sub eax, ebx;
 		cmp eax, ecx
 
-		rdtsc;
+			rdtsc;
 		mov time_upper_b, edx;
 		mov time_lower_b, eax;
 	}
@@ -392,7 +496,7 @@ int security::internal::timing::get_tick_count() {
 	DWORD t1;
 	DWORD t2;
 
-	t1 = GetTickCount();
+	t1 = GetTickCount64();
 
 	//junk code to keep the cpu busy for a few cycles so that time passes and the return value of GetTickCount() changes (so we can detect if it runs at "normal" speed or is being checked through by a human)
 	_asm
@@ -406,7 +510,7 @@ int security::internal::timing::get_tick_count() {
 		shl ecx, 4;
 	}
 
-	t2 = GetTickCount();
+	t2 = GetTickCount64();
 
 	//30 ms seems ok
 	return ((t2 - t1) > 30) ? security::internal::debug_results::query_performance_counter : security::internal::debug_results::none;
