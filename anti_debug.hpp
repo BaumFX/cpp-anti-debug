@@ -2,16 +2,16 @@
 
 #include <Windows.h>
 #include <Winternl.h>
+#include <string>
 
 #pragma warning( disable : 4091)
-
-typedef NTSTATUS(__stdcall* _NtQueryInformationProcess)(_In_ HANDLE, _In_  unsigned int, _Out_ PVOID, _In_ ULONG, _Out_ PULONG);
-typedef NTSTATUS(__stdcall* _NtSetInformationThread)(_In_ HANDLE, _In_ THREAD_INFORMATION_CLASS, _In_ PVOID, _In_ ULONG);
 
 //main namespace for security
 namespace security {
 	//internal (used by the security itself, no need to be used outside of namespace)
 	namespace internal {
+		const wchar_t* get_string(int index);
+
 		//dynamically resolved functions
 		typedef NTSTATUS(__stdcall* _NtQueryInformationProcess)(_In_ HANDLE, _In_  unsigned int, _Out_ PVOID, _In_ ULONG, _Out_ PULONG);
 		typedef NTSTATUS(__stdcall* _NtSetInformationThread)(_In_ HANDLE, _In_ THREAD_INFORMATION_CLASS, _In_ PVOID, _In_ ULONG);
@@ -20,9 +20,9 @@ namespace security {
 		extern enum debug_results
 		{
 			//nothing was caught, value = 0
-			none = 0x0000, //0
+			none = 0x0000,
 
-			//something caught in memory (0x1000 - 0x1008)
+			//something caught in memory (0x1000 - 0x1009)
 			being_debugged_peb = 0x1000,
 			remote_debugger_present = 0x1001,
 			debugger_is_present = 0x1002,
@@ -32,6 +32,7 @@ namespace security {
 			output_debug_string = 0x1006,
 			nt_set_information_thread = 0x1007,
 			debug_active_process = 0x1008,
+			write_buffer = 0x1009,
 
 			//something caught in exceptions (0x2000 - 0x2005)
 			close_handle_exception = 0x2000,
@@ -60,6 +61,7 @@ namespace security {
 			int nt_query_information_process();
 			int nt_set_information_thread();
 			int debug_active_process(const char*);
+			int write_buffer();
 		}
 
 		namespace exceptions {
@@ -80,6 +82,10 @@ namespace security {
 		namespace cpu {
 			int hardware_debug_registers();
 			int mov_ss();
+		}
+
+		namespace virtualization {
+
 		}
 	}
 
