@@ -142,7 +142,7 @@ int security::internal::memory::nt_query_information_process() {
 
 	//dynamically acquire the address of NtQueryInformationProcess
 	_NtQueryInformationProcess NtQueryInformationProcess = NULL;
-	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, "NtQueryInformationProcess");
+	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, xor("NtQueryInformationProcess"));
 
 	//if we cant get access for some reason, we return none
 	if (NtQueryInformationProcess == NULL) { return security::internal::debug_results::none; }
