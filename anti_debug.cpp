@@ -4,7 +4,7 @@
 #include <functional>
 #include <vector>
 #include <string>
-#include "utilities.hpp"
+#include <sstream>
 #include <iostream>
 
 //precompiler instructions -> replace the xor(string) with a xor(xor'd_string) so that
@@ -120,7 +120,7 @@ int security::internal::memory::nt_query_information_process() {
 
 	//dynamically acquire the address of NtQueryInformationProcess
 	_NtQueryInformationProcess NtQueryInformationProcess = NULL;
-	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, xor ("NtQueryInformationProcess"));
+	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, xor("NtQueryInformationProcess"));
 
 	//if we cant get access for some reason, we return none
 	if (NtQueryInformationProcess == NULL) { return security::internal::debug_results::none; }
@@ -164,7 +164,7 @@ int security::internal::memory::nt_set_information_thread() {
 	return security::internal::debug_results::none;
 }
 
-int security::internal::memory::debug_active_process(const char* cpid) {
+int security::internal::memory::debug_active_process() {
 	BOOL found = FALSE;
 	STARTUPINFOA si = { 0 };
 	PROCESS_INFORMATION pi = { 0 };
@@ -172,11 +172,17 @@ int security::internal::memory::debug_active_process(const char* cpid) {
 	TCHAR sz_path[MAX_PATH];
 	DWORD exit_code = 0;
 
+	DWORD proc_id = GetCurrentProcessId();
+	std::stringstream stream;
+	stream << proc_id;
+	std::string args = stream.str();
+
+	const char* cp_id = args.c_str();
 	CreateMutex(NULL, FALSE, get_string(5));
 	if (GetLastError() != ERROR_SUCCESS)
 	{
 		//if we get here, we're in the child process
-		if (DebugActiveProcess((DWORD)atoi(cpid)))
+		if (DebugActiveProcess((DWORD)atoi(cp_id)))
 		{
 			//no debugger found
 			return security::internal::debug_results::none;
@@ -237,7 +243,9 @@ int security::internal::memory::write_buffer() {
 	DWORD granularity;
 
 	PVOID* addresses = static_cast<PVOID*>(VirtualAlloc(NULL, 4096 * sizeof(PVOID), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
-	if (addresses == NULL) { return security::internal::debug_results::write_buffer; }
+	if (addresses == NULL) {
+		return security::internal::debug_results::write_buffer;
+	}
 
 	int* buffer = static_cast<int*>(VirtualAlloc(NULL, 4096 * 4096, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE));
 	if (buffer == NULL) {
@@ -257,7 +265,7 @@ int security::internal::memory::write_buffer() {
 		VirtualFree(buffer, 0, MEM_RELEASE);
 
 		//we should have 1 hit if everything is fine
-		return (hits != 1) ? security::internal::debug_results::none : security::internal::debug_results::write_buffer;
+		return (hits == 1) ? security::internal::debug_results::none : security::internal::debug_results::write_buffer;
 	}
 
 	//second option
@@ -273,11 +281,10 @@ int security::internal::memory::write_buffer() {
 		return security::internal::debug_results::write_buffer;
 	}
 
-	//make some calls where a buffer *can* be written to, but isn't actually edited because we pass invalid parameters
-	if ((GlobalGetAtomName(INVALID_ATOM, (LPTSTR)buffer, 1) != FALSE) || (GetEnvironmentVariable(get_string(6), (LPWSTR)buffer, 4096 * 4096) != FALSE)
-		|| (GetBinaryType(get_string(7), (LPDWORD)buffer) != FALSE) || (HeapQueryInformation(0, (HEAP_INFORMATION_CLASS)69, buffer, 4096, NULL) != FALSE)
-		|| (ReadProcessMemory(INVALID_HANDLE_VALUE, (LPCVOID)0x69696969, buffer, 4096, NULL) != FALSE) || (GetThreadContext(INVALID_HANDLE_VALUE, (LPCONTEXT)buffer) != FALSE)
-		|| (GetWriteWatch(0, &security::internal::memory::write_buffer, 0, NULL, NULL, (PULONG)buffer) == 0)) {
+	//make some calls where a buffer *can* be written to, but isn't actually edited because we pass invalid parameters	
+	if (GlobalGetAtomName(INVALID_ATOM, (LPTSTR)buffer, 1) != FALSE || GetEnvironmentVariable(get_string(6), (LPWSTR)buffer, 4096 * 4096) != FALSE || GetBinaryType(get_string(7), (LPDWORD)buffer) != FALSE
+		|| HeapQueryInformation(0, (HEAP_INFORMATION_CLASS)69, buffer, 4096, NULL) != FALSE || ReadProcessMemory(INVALID_HANDLE_VALUE, (LPCVOID)0x69696969, buffer, 4096, NULL) != FALSE
+		|| GetThreadContext(INVALID_HANDLE_VALUE, (LPCONTEXT)buffer) != FALSE || GetWriteWatch(0, &security::internal::memory::write_buffer, 0, NULL, NULL, (PULONG)buffer) == 0) {
 		result = false;
 		error = true;
 	}
@@ -326,19 +333,22 @@ int security::internal::exceptions::close_handle_exception() {
 
 //we force an exception to occur, if it occurs outside of a debugger the __except() handler is called, if it's inside a debugger it will not be called
 int security::internal::exceptions::single_step_exception() {
+	BOOL debugger_present = TRUE;
 	__try
 	{
-		_asm
+		__asm
 		{
-			pushfd;						//save flag register
-			or byte ptr[esp + 1], 1;	//set trap flag in EFlags
-			popfd;						//restore flag register
+			pushfd						//save flag register
+			or dword ptr[esp], 0x100	//set trap flag in EFlags
+			popfd						//restore flag register
+			nop							//does nothing
 		}
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER) { return security::internal::debug_results::none; }
+	__except (EXCEPTION_EXECUTE_HANDLER) { debugger_present = FALSE; }
 
-	//if we get the exception, we return the right code.
-	return security::internal::debug_results::single_step;
+	//if the exception was raised, return none
+	//if a debugger handled the exception (no exception for us to handle), return detection
+	return (debugger_present) ? security::internal::debug_results::single_step : security::internal::debug_results::none;
 }
 
 //i3 is a standard software breakcode (opcode 0xCC), when you set a breakpoint the debugger replaces the opcode under the breakpoint location with
@@ -550,16 +560,85 @@ int security::internal::cpu::mov_ss() {
 	return (found) ? security::internal::debug_results::mov_ss : security::internal::debug_results::none;
 }
 
-int security::check_security(const char* pid) {
-	bool yes = ((security::internal::memory::being_debugged_peb() == security::internal::debug_results::none && security::internal::memory::remote_debugger_present() == security::internal::debug_results::none
-		&& security::internal::memory::check_window_name() == security::internal::debug_results::none && security::internal::memory::is_debugger_present() == security::internal::debug_results::none
-		&& security::internal::memory::nt_global_flag_peb() == security::internal::debug_results::none && security::internal::memory::nt_query_information_process() == security::internal::debug_results::none
-		&& security::internal::memory::nt_set_information_thread() == security::internal::debug_results::none && security::internal::memory::debug_active_process(pid) == security::internal::debug_results::none
-		&& security::internal::exceptions::close_handle_exception() == security::internal::debug_results::none && security::internal::exceptions::single_step_exception() == security::internal::debug_results::none
-		&& security::internal::memory::write_buffer() == security::internal::debug_results::none && security::internal::exceptions::int_3() == security::internal::debug_results::none
-		&& security::internal::exceptions::int_2d() == security::internal::debug_results::none && security::internal::exceptions::prefix_hop() == security::internal::debug_results::none
-		&& security::internal::exceptions::debug_string() == security::internal::debug_results::none && security::internal::timing::rdtsc() == security::internal::debug_results::none 
-		&& security::internal::timing::query_performance_counter() == security::internal::debug_results::none && security::internal::timing::get_tick_count() == security::internal::debug_results::none
-		&& security::internal::cpu::hardware_debug_registers() == security::internal::debug_results::none && security::internal::cpu::mov_ss() == security::internal::debug_results::none) == security::internal::debug_results::none);
-	return (yes) ? 0 : -1;
+security::internal::debug_results security::check_security() {
+	//memory
+	if (security::internal::memory::being_debugged_peb() != security::internal::debug_results::none) {
+		return security::internal::debug_results::being_debugged_peb;
+	}
+	if (security::internal::memory::remote_debugger_present() != security::internal::debug_results::none) {
+		return security::internal::debug_results::remote_debugger_present;
+	}
+
+	if (security::internal::memory::check_window_name() != security::internal::debug_results::none) {
+		return security::internal::debug_results::find_window;
+	}
+
+	if (security::internal::memory::is_debugger_present() != security::internal::debug_results::none) {
+		return security::internal::debug_results::debugger_is_present;
+	}
+
+	if (security::internal::memory::nt_global_flag_peb() != security::internal::debug_results::none) {
+		return security::internal::debug_results::being_debugged_peb;
+	}
+
+	if (security::internal::memory::nt_query_information_process() != security::internal::debug_results::none) {
+		return security::internal::debug_results::nt_query_information_process;
+	}
+
+	//if (security::internal::memory::debug_active_process("1") != security::internal::debug_results::none) {
+		//return security::internal::debug_results::debug_active_process;
+	//}
+
+	if (security::internal::memory::write_buffer() != security::internal::debug_results::none) {
+		return security::internal::debug_results::write_buffer;
+	}
+
+	//exceptions
+	if (security::internal::exceptions::close_handle_exception() != security::internal::debug_results::none) {
+		return security::internal::debug_results::close_handle_exception;
+	}
+
+	if (security::internal::exceptions::single_step_exception() != security::internal::debug_results::none) {
+		return security::internal::debug_results::single_step;
+	}
+
+	if (security::internal::exceptions::int_3() != security::internal::debug_results::none) {
+		return security::internal::debug_results::int_3_cc;
+	}
+
+	if (security::internal::exceptions::int_2d() != security::internal::debug_results::none) {
+		return security::internal::debug_results::int_2;
+	}
+
+	if (security::internal::exceptions::prefix_hop() != security::internal::debug_results::none) {
+		return security::internal::debug_results::prefix_hop;
+	}
+
+	if (security::internal::exceptions::debug_string() != security::internal::debug_results::none) {
+		return security::internal::debug_results::debug_string;
+	}
+
+	//timing
+	if (security::internal::timing::rdtsc() != security::internal::debug_results::none) {
+		return security::internal::debug_results::rdtsc;
+	}
+
+	if (security::internal::timing::query_performance_counter() != security::internal::debug_results::none) {
+		return security::internal::debug_results::query_performance_counter;
+	}
+
+	if (security::internal::timing::get_tick_count() != security::internal::debug_results::none) {
+		return security::internal::debug_results::get_tick_count;
+	}
+
+	//cpu
+	if (security::internal::cpu::hardware_debug_registers() != security::internal::debug_results::none) {
+		return security::internal::debug_results::hardware_debug_registers;
+	}
+
+	if (security::internal::cpu::mov_ss() != security::internal::debug_results::none) {
+		return security::internal::debug_results::mov_ss;
+	}
+
+	return security::internal::debug_results::none;
 }
