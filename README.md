@@ -13,12 +13,9 @@ you can then use
 ```
 #include anti_debug.hpp
 
-//will contain 0 if no debuggers etc. were found, returns -1 if something was found, you could edit the check_security() function
-//to return the specific error code
+//will return security::internal::debug_results::none if no debuggers etc. were found, returns the specific code if something was found
 //see anti_debug.hpp for more information
-int security_status = security::check_security();
-
-if(security_status != 0) {
+if(security::check_security() != security::internal::debug_results::none) {
   std::cout << "security check was not successful." << std::endl;
 }
 ```
