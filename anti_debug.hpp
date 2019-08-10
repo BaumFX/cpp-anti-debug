@@ -10,6 +10,8 @@
 namespace security {
 	//internal (used by the security itself, no need to be used outside of namespace)
 	namespace internal {
+		int __cdecl vm_handler(EXCEPTION_RECORD* p_rec, void* est, unsigned char* p_context, void* disp);
+		void to_lower(unsigned char* input);
 		const wchar_t* get_string(int index);
 
 		//dynamically resolved functions
@@ -48,8 +50,13 @@ namespace security {
 			get_tick_count = 0x3002,
 
 			//something caught in cpu (0x4000 - 0x4001)
-			hardware_debug_registers = 0x4002,
+			hardware_debug_registers = 0x4000,
 			mov_ss = 0x4001,
+
+			//virtualization (0x5000 - 0x5003)
+			check_cpuid = 0x5000,
+			check_registry = 0x5001,
+			vm = 0x5002,
 		};
 
 		namespace memory {
@@ -85,7 +92,9 @@ namespace security {
 		}
 
 		namespace virtualization {
-
+			int check_cpuid();
+			int check_registry();
+			int vm();
 		}
 	}
 

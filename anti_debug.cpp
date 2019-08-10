@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <Windows.h>
 #include "anti_debug.hpp"
 #include <cstdio>
@@ -6,6 +8,7 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <filesystem>
 
 //precompiler instructions -> replace the xor(string) with a xor(xor'd_string) so that
 //the strings won't be caught by static analysis
@@ -14,6 +17,25 @@
 //disable warnings because #cleancode
 #pragma warning(disable : 6387)
 #pragma warning(disable : 4244)
+#pragma warning(disable : 6262)
+#pragma warning(disable : 4733)
+#pragma warning(disable : 4731)
+
+bool found = true;
+
+int __cdecl security::internal::vm_handler(EXCEPTION_RECORD* p_rec, void* est, unsigned char* p_context, void* disp)
+{
+	found = true;
+	(*(unsigned long*)(p_context + 0xB8)) += 4;
+	return ExceptionContinueExecution;
+}
+
+void security::internal::to_lower(unsigned char* input)
+{
+	char* p = (char*)input;
+	unsigned long length = strlen(p);
+	for (unsigned long i = 0; i < length; i++) p[i] = tolower(p[i]);
+}
 
 //returns strings for the check_window_name() function
 //this combined with the xoring of strings is to prevent static analysis / make it harder
@@ -120,7 +142,7 @@ int security::internal::memory::nt_query_information_process() {
 
 	//dynamically acquire the address of NtQueryInformationProcess
 	_NtQueryInformationProcess NtQueryInformationProcess = NULL;
-	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, xor("NtQueryInformationProcess"));
+	NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(h_ntdll, "NtQueryInformationProcess");
 
 	//if we cant get access for some reason, we return none
 	if (NtQueryInformationProcess == NULL) { return security::internal::debug_results::none; }
@@ -243,9 +265,8 @@ int security::internal::memory::write_buffer() {
 	DWORD granularity;
 
 	PVOID* addresses = static_cast<PVOID*>(VirtualAlloc(NULL, 4096 * sizeof(PVOID), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
-	if (addresses == NULL) {
-		return security::internal::debug_results::write_buffer;
-	}
+	if (addresses == NULL) { 
+		return security::internal::debug_results::write_buffer; }
 
 	int* buffer = static_cast<int*>(VirtualAlloc(NULL, 4096 * 4096, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE));
 	if (buffer == NULL) {
@@ -560,6 +581,196 @@ int security::internal::cpu::mov_ss() {
 	return (found) ? security::internal::debug_results::mov_ss : security::internal::debug_results::none;
 }
 
+int security::internal::virtualization::check_cpuid() {
+	bool found = false;
+	__asm {
+		xor eax, eax
+		mov    eax, 0x40000000
+		cpuid
+		cmp ecx, 0x4D566572
+		jne nop_instr
+		cmp edx, 0x65726177
+		jne nop_instr
+		mov found, 0x1
+		nop_instr:
+		nop
+	}
+
+	return (found) ? security::internal::debug_results::check_cpuid : security::internal::debug_results::none;
+}
+
+int security::internal::virtualization::check_registry() {
+	HKEY h_key = 0;
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, xor (L"HARDWARE\\ACPI\\DSDT\\VBOX__"), 0, KEY_READ, &h_key) == ERROR_SUCCESS) { return security::internal::debug_results::check_registry; }
+
+	return security::internal::debug_results::none;
+}
+
+int security::internal::virtualization::vm() {
+	if (CreateFile(xor (L"\\\\.\\VBoxMiniRdrDN"), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, 0, 0) != INVALID_HANDLE_VALUE) { return security::internal::debug_results::vm; }
+
+	if (LoadLibrary(xor (L"VBoxHook.dll"))) { return security::internal::debug_results::vm; }
+
+	HKEY h_key = 0;
+	if ((ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, xor(L"SOFTWARE\\Oracle\\VirtualBox Guest Additions"), 0, KEY_READ, &h_key)) && h_key) { RegCloseKey(h_key); return security::internal::debug_results::vm; }
+
+	h_key = 0;
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, xor(L"HARDWARE\\DESCRIPTION\\System"), 0, KEY_READ, &h_key) == ERROR_SUCCESS)
+	{
+		unsigned long type = 0;
+		unsigned long size = 0x100;
+		char* systembiosversion = (char*)LocalAlloc(LMEM_ZEROINIT, size + 10);
+		if (ERROR_SUCCESS == RegQueryValueEx(h_key, xor(L"SystemBiosVersion"), 0, &type, (unsigned char*)systembiosversion, &size))
+		{
+			to_lower((unsigned char*)systembiosversion);
+			if (type == REG_SZ || type == REG_MULTI_SZ)
+			{
+				if (strstr(systembiosversion, xor("vbox")))
+				{
+					return security::internal::debug_results::vm;
+				}
+			}
+		}
+		LocalFree(systembiosversion);
+
+		type = 0;
+		size = 0x200;
+		char* videobiosversion = (char*)LocalAlloc(LMEM_ZEROINIT, size + 10);
+		if (ERROR_SUCCESS == RegQueryValueEx(h_key, xor(L"VideoBiosVersion"), 0, &type, (unsigned char*)videobiosversion, &size))
+		{
+			if (type == REG_MULTI_SZ)
+			{
+				char* video = videobiosversion;
+				while (*(unsigned char*)video)
+				{
+					to_lower((unsigned char*)video);
+					if (strstr(video, xor("oracle")) || strstr(video, xor("virtualbox"))) { return security::internal::debug_results::vm; }
+					video = &video[strlen(video) + 1];
+				}
+			}
+		}
+		LocalFree(videobiosversion);
+		RegCloseKey(h_key);
+	}
+
+	HANDLE h = CreateFile(xor(L"\\\\.\\pipe\\VBoxTrayIPC"), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+	if (h != INVALID_HANDLE_VALUE) { CloseHandle(h); return security::internal::debug_results::vm; }
+
+	unsigned long pnsize = 0x1000;
+	char* s_provider = (char*)LocalAlloc(LMEM_ZEROINIT, pnsize);
+	wchar_t w_provider[0x1000];
+	mbstowcs(w_provider, s_provider, strlen(s_provider) + 1);
+
+	h_key = 0;
+	char* s_subkey = xor("SYSTEM\\CurrentControlSet\\Enum\\IDE");
+	wchar_t w_subkey[22];
+	mbstowcs(w_subkey, s_subkey, strlen(s_subkey) + 1);
+	if ((ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, w_subkey, 0, KEY_READ, &h_key)) && h_key)
+	{
+		unsigned long n_subkeys = 0;
+		unsigned long max_subkey_length = 0;
+		if (ERROR_SUCCESS == RegQueryInfoKey(h_key, 0, 0, 0, &n_subkeys, &max_subkey_length, 0, 0, 0, 0, 0, 0))
+		{
+			//n_subkeys is usually 2
+			if (n_subkeys)
+			{
+				char* s_new_key = (char*)LocalAlloc(LMEM_ZEROINIT, max_subkey_length + 1);
+				for (unsigned long i = 0; i < n_subkeys; i++)
+				{
+					memset(s_new_key, 0, max_subkey_length + 1);
+					HKEY h_new_key = 0;
+
+					wchar_t w_key_new[2048];
+					mbstowcs(w_key_new, s_new_key, strlen(s_new_key) + 1);
+
+					if (ERROR_SUCCESS == RegEnumKey(h_key, i, w_key_new, max_subkey_length + 1))
+					{
+						if ((RegOpenKeyEx(h_key, w_key_new, 0, KEY_READ, &h_new_key) == ERROR_SUCCESS) && h_new_key)
+						{
+							unsigned long nn = 0;
+							unsigned long maxlen = 0;
+							RegQueryInfoKey(h_new_key, 0, 0, 0, &nn, &maxlen, 0, 0, 0, 0, 0, 0);
+							char* s_newer_key = (char*)LocalAlloc(LMEM_ZEROINIT, maxlen + 1);
+							wchar_t w_key_newer[2048];
+							mbstowcs(w_key_newer, s_newer_key, strlen(s_newer_key) + 1);
+							if (RegEnumKey(h_new_key, 0, w_key_newer, maxlen + 1) == ERROR_SUCCESS)
+							{
+								HKEY HKKK = 0;
+								if (RegOpenKeyEx(h_new_key, w_key_newer, 0, KEY_READ, &HKKK) == ERROR_SUCCESS)
+								{
+									unsigned long size = 0xFFF;
+									unsigned char value_name[0x1000] = { 0 };
+									if (RegQueryValueEx(h_new_key, xor(L"FriendlyName"), 0, 0, value_name, &size) == ERROR_SUCCESS) { to_lower(value_name); if (strstr((char*)value_name, xor("vbox"))) { return security::internal::debug_results::vm; } }
+									RegCloseKey(HKKK);
+								}
+							}
+							LocalFree(w_key_newer);
+							LocalFree(s_newer_key);
+							RegCloseKey(h_new_key);
+						}
+					}
+				}
+				LocalFree(s_new_key);
+			}
+		}
+		RegCloseKey(h_key);
+	}
+
+	__asm
+	{
+		push offset vm_handler
+		push dword ptr fs : [0x0]
+		mov dword ptr fs : [0x0] , esp
+		__emit 0Fh
+		__emit 3Fh
+		__emit 07h
+		__emit 0Bh
+	} 
+	
+	if (found == false) { return security::internal::debug_results::vm; }
+
+	__asm
+	{
+		pop dword ptr fs : [0x0]
+		pop eax
+	}
+
+	bool found = 0;
+	__asm
+	{
+		pushad
+		pushfd
+		pop eax
+		or eax, 0x00200000
+		push eax
+		popfd
+		pushfd
+		pop eax
+		and eax, 0x00200000
+		jz cpu_id_not_supported
+		xor eax, eax
+		xor edx, edx
+		xor ecx, ecx
+		xor ebx, ebx
+		inc eax
+		cpuid
+		test ecx, 0x80000000
+		jnz hypervisor
+		mov found, 0
+		jmp bye
+		hypervisor :
+		mov found, 1
+		jmp bye
+		cpu_id_not_supported :
+		mov found, 2
+		bye :
+		popad
+	}
+	if (found == 1) { return security::internal::debug_results::vm; }
+
+	return security::internal::debug_results::none;
+}
+
 security::internal::debug_results security::check_security() {
 	//memory
 	if (security::internal::memory::being_debugged_peb() != security::internal::debug_results::none) {
@@ -585,7 +796,7 @@ security::internal::debug_results security::check_security() {
 		return security::internal::debug_results::nt_query_information_process;
 	}
 
-	//if (security::internal::memory::debug_active_process("1") != security::internal::debug_results::none) {
+	//if (security::internal::memory::debug_active_process() != security::internal::debug_results::none) {
 		//return security::internal::debug_results::debug_active_process;
 	//}
 
@@ -638,6 +849,19 @@ security::internal::debug_results security::check_security() {
 
 	if (security::internal::cpu::mov_ss() != security::internal::debug_results::none) {
 		return security::internal::debug_results::mov_ss;
+	}
+
+	//virtualization
+	if (security::internal::virtualization::check_cpuid() != security::internal::debug_results::none) {
+		return security::internal::debug_results::check_cpuid;
+	}
+
+	if (security::internal::virtualization::check_registry() != security::internal::debug_results::none) {
+		return security::internal::debug_results::check_registry;
+	}
+
+	if (security::internal::virtualization::vm() != security::internal::debug_results::none) {
+		return security::internal::debug_results::vm;
 	}
 
 	return security::internal::debug_results::none;
