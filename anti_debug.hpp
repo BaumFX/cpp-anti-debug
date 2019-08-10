@@ -60,7 +60,7 @@ namespace security {
 			int nt_global_flag_peb();
 			int nt_query_information_process();
 			int nt_set_information_thread();
-			int debug_active_process(const char*);
+			int debug_active_process();
 			int write_buffer();
 		}
 
@@ -89,5 +89,5 @@ namespace security {
 		}
 	}
 
-	int check_security(const char*);
+	internal::debug_results check_security();
 }
