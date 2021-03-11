@@ -180,7 +180,7 @@ int security::internal::memory::nt_set_information_thread() {
 	//if we cant get access for some reason, we return none
 	if (NtQueryInformationProcess == NULL) { return security::internal::debug_results::none; }
 
-	//make call to deattach a debugger :moyai:
+	//make call to detach a debugger :moyai:
 	(_NtSetInformationThread)(GetCurrentThread(), thread_hide_from_debugger, 0, 0, 0);
 
 	return security::internal::debug_results::none;
@@ -312,7 +312,7 @@ int security::internal::memory::write_buffer() {
 
 	if (error == FALSE)
 	{
-		//all calles failed as they're supposed to
+		//all calls failed as they're supposed to
 		hits = 4096;
 		if (GetWriteWatch(0, buffer, 4096, addresses, &hits, &granularity) != 0)
 		{
@@ -395,7 +395,7 @@ int security::internal::exceptions::int_3() {
 
 //2d is a kernel interrupt (opcode 0x2D), when it gets executed, windows will use the extended instruction pointer register value as the exception address,
 //after then it increments the extended instruction pointer register value by 1.
-//windows also checks the eax register value to dertimne how to adjust the exception address
+//windows also checks the eax register value to determine how to adjust the exception address
 //if the eax register is 1, 3, or 4 (on all windows version) or 5 on vista and later, it will increase the exception address by one
 //here we have 2 options, first we check if we handle the exception or the debugger (same as above)
 //
@@ -662,7 +662,7 @@ int security::internal::virtualization::vm() {
 	mbstowcs(w_provider, s_provider, strlen(s_provider) + 1);
 
 	h_key = 0;
-	char* s_subkey = xor("SYSTEM\\CurrentControlSet\\Enum\\IDE");
+	const char* s_subkey = xor("SYSTEM\\CurrentControlSet\\Enum\\IDE");
 	wchar_t w_subkey[22];
 	mbstowcs(w_subkey, s_subkey, strlen(s_subkey) + 1);
 	if ((ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, w_subkey, 0, KEY_READ, &h_key)) && h_key)
