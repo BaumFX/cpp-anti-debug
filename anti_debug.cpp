@@ -856,6 +856,14 @@ security::internal::debug_results security::check_security() {
 		return security::internal::debug_results::int_3_cc;
 	}
 
+	if (security::internal::exceptions::multibyte_int3() != security::internal::debug_results::none) {
+		return security::internal::debug_results::multibyte_int_3_cd;
+	}
+
+	if (security::internal::exceptions::int_2c() != security::internal::debug_results::none) {
+		return security::internal::debug_results::int_2c;
+	}
+	
 	if (security::internal::exceptions::int_2d() != security::internal::debug_results::none) {
 		return security::internal::debug_results::int_2;
 	}
