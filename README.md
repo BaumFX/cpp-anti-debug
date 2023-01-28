@@ -41,6 +41,8 @@ alternatively you can use the big function check_security() to run all checks.
 			int close_handle_exception();
 			int single_step_exception();
 			int int_3();
+			int multibyte_int3();
+			int int_2c();
 			int int_2d();
 			int prefix_hop();
 			int debug_string();

@@ -393,6 +393,45 @@ int security::internal::exceptions::int_3() {
 	return security::internal::debug_results::int_3_cc;
 }
 
+//extended version of int3 (0xCC) opcode. INT n, RET   where n = 2nd byte in instruction.
+//without the debugger, something has to handle the breakpoint exception (our handler)
+//if it doesn't get hit, theres a debugger handling it instead -> we can detect that our handler was not run -> debugger found
+//possible bypass: most debuggers give an option (pass exception to the application or let the debugger handle it), if the debugger handles it, we can detect it.
+int security::internal::exceptions::multibyte_int3() {
+	__try
+	{
+            __asm //multi-byte version of INT3 stub
+            {
+                _emit 0xCD   //INT
+                _emit 0x03   //0x03
+                _emit 0xC3   //RET
+            }
+        }
+	
+	//exception is handled by our app = debugger did not attempt to intervene
+	__except (EXCEPTION_EXECUTE_HANDLER) { return security::internal::debug_results::none; }
+
+	//if we don't get the exception, we return the right code.
+	return security::internal::debug_results::multibyte_int_3_cd;
+}
+
+//2c is a kernel interrupt (opcode 0x2c), acts as an assertion (assertion failure) break point when debugging
+int security::internal::exceptions::int_2c() {
+
+	__try
+	{
+		_asm
+		{
+			int 0x2C; //assertion interrupt
+		}
+	}
+
+	__except (EXCEPTION_EXECUTE_HANDLER) { return security::internal::debug_results::none; }
+
+	//if we don't get the exception, we return the right code.
+	return security::internal::debug_results::int_2c;
+}
+
 //2d is a kernel interrupt (opcode 0x2D), when it gets executed, windows will use the extended instruction pointer register value as the exception address,
 //after then it increments the extended instruction pointer register value by 1.
 //windows also checks the eax register value to determine how to adjust the exception address
@@ -817,6 +856,14 @@ security::internal::debug_results security::check_security() {
 		return security::internal::debug_results::int_3_cc;
 	}
 
+	if (security::internal::exceptions::multibyte_int3() != security::internal::debug_results::none) {
+		return security::internal::debug_results::multibyte_int_3_cd;
+	}
+
+	if (security::internal::exceptions::int_2c() != security::internal::debug_results::none) {
+		return security::internal::debug_results::int_2c;
+	}
+	
 	if (security::internal::exceptions::int_2d() != security::internal::debug_results::none) {
 		return security::internal::debug_results::int_2;
 	}
