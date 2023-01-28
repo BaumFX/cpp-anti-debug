@@ -43,7 +43,9 @@ namespace security {
 			int_2 = 0x2003,
 			prefix_hop = 0x2004,
 			debug_string = 0x2005,
-
+                        multibyte_int_3_cd = 0x2006,
+			int_2c = 0x2007,
+			
 			//something caught with timings (0x3000 - 0x3002)
 			rdtsc = 0x3000,
 			query_performance_counter = 0x3001,
@@ -74,7 +76,9 @@ namespace security {
 		namespace exceptions {
 			int close_handle_exception();
 			int single_step_exception();
+			int multibyte_int3();
 			int int_3();
+			int int_2c(); //assertion interrupt
 			int int_2d();
 			int prefix_hop();
 			int debug_string();
